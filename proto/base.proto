@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package kcp_server;
+
+message BaseMessage {
+    uint32 msg_id = 1;
+    bytes payload = 2;
+    uint32 seq = 3;
+    uint64 timestamp = 4;
+}
+
+message Ping {
+    string content = 1;
+    uint64 send_time = 2;
+}
+
+message Pong {
+    string content = 1;
+    uint64 recv_time = 2;
+}

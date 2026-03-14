@@ -18,3 +18,15 @@ message Pong {
     string content = 1;
     uint64 recv_time = 2;
 }
+
+message RpcRequest {
+    string method = 1;
+    string params = 2;
+}
+
+message RpcResponse {
+    string method = 1;
+    string result = 2;
+    int32 code = 3;
+    string error_message = 4;
+}

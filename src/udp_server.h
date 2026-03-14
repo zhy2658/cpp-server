@@ -2,6 +2,9 @@
 #include <asio.hpp>
 #include <memory>
 #include <array>
+#include <atomic>
+#include <thread>
+#include <mutex>
 #include "session_manager.h"
 #include "config.h"
 
@@ -14,20 +17,18 @@ public:
     void stop();
 
 private:
-    void do_receive();
-    // Thread-safe send
+    void start_receive_loop();
     void do_send(const char* data, size_t len, const asio::ip::udp::endpoint& ep);
-    void start_timer();
+    void start_update_loop();
 
     asio::io_context& ioc_;
-    asio::ip::udp::socket socket_;
-    asio::strand<asio::io_context::executor_type> socket_strand_;
-    
-    asio::ip::udp::endpoint remote_ep_;
-    std::array<char, 65536> recv_buf_;
+    std::unique_ptr<asio::ip::udp::socket> socket_;
+    // asio::strand<asio::io_context::executor_type> socket_strand_;
     
     ServerConfig config_;
     std::unique_ptr<SessionManager> session_mgr_;
-    asio::steady_timer timer_;
-    bool running_ = false;
+    std::thread recv_thread_;
+    std::thread update_thread_;
+    std::mutex send_mutex_;
+    std::atomic<bool> running_{false};
 };

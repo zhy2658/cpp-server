@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 #include <chrono>
 
 inline uint32_t current_ms() {

@@ -26,7 +26,7 @@ void SessionManager::handle_input(const asio::ip::udp::endpoint& ep, const char*
     KcpSession::Ptr session;
     
     {
-        std::shared_lock<std::shared_mutex> lock(shard.mutex);
+        std::lock_guard<std::mutex> lock(shard.mutex);
         auto it = shard.sessions.find(conv);
         if (it != shard.sessions.end()) {
             session = it->second;
@@ -34,7 +34,7 @@ void SessionManager::handle_input(const asio::ip::udp::endpoint& ep, const char*
     }
 
     if (!session) {
-        std::unique_lock<std::shared_mutex> lock(shard.mutex);
+        std::lock_guard<std::mutex> lock(shard.mutex);
         auto it = shard.sessions.find(conv);
         if (it != shard.sessions.end()) {
             session = it->second;
@@ -68,7 +68,7 @@ void SessionManager::handle_input(const asio::ip::udp::endpoint& ep, const char*
 
 void SessionManager::update_all(uint32_t current_ms) {
     for (auto& shard_ptr : shards_) {
-        std::shared_lock<std::shared_mutex> lock(shard_ptr->mutex);
+        std::lock_guard<std::mutex> lock(shard_ptr->mutex);
         for (auto& pair : shard_ptr->sessions) {
             pair.second->update(current_ms);
         }
@@ -77,7 +77,7 @@ void SessionManager::update_all(uint32_t current_ms) {
 
 void SessionManager::check_timeout(uint32_t current_ms, uint32_t timeout_ms) {
     for (auto& shard_ptr : shards_) {
-        std::unique_lock<std::shared_mutex> lock(shard_ptr->mutex);
+        std::unique_lock<std::mutex> lock(shard_ptr->mutex);
         for (auto it = shard_ptr->sessions.begin(); it != shard_ptr->sessions.end();) {
             // Check last active time (30s default)
             if (current_ms > it->second->get_last_active() + timeout_ms) {

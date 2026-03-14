@@ -1,6 +1,7 @@
 #pragma once
+#include <cstdint>
 #include <unordered_map>
-#include <shared_mutex>
+#include <mutex>
 #include <vector>
 #include <memory>
 #include <functional>
@@ -21,7 +22,7 @@ private:
     
     struct Shard {
         std::unordered_map<uint32_t, KcpSession::Ptr> sessions;
-        std::shared_mutex mutex;
+        std::mutex mutex;
     };
 
     std::vector<std::unique_ptr<Shard>> shards_;

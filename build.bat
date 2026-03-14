@@ -18,7 +18,7 @@ if not exist %BUILD_DIR% (
 
 :: Configure CMake (MinGW Makefiles, Release mode)
 echo [INFO] Configuring CMake...
-cmake -S . -B %BUILD_DIR% -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=%BUILD_TYPE%
+cmake -S . -B %BUILD_DIR% -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=%BUILD_TYPE% -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 if %errorlevel% neq 0 (
     echo [ERROR] CMake configuration failed.
     pause

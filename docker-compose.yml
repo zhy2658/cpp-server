@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  game-server:
+    build: .
+    image: cpp-server:latest
+    container_name: game-server
+    restart: unless-stopped
+    ports:
+      - "8888:8888/udp"
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./logs:/app/logs
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

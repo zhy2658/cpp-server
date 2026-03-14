@@ -6,6 +6,37 @@
 - 构建、运行、扩展新消息的步骤
 - 常见问题与排错
 
+## 架构与规范
+
+详细的设计文档请参考 **[ARCHITECTURE.md](file:///d:/user/desktop/demo/cpp-server/ARCHITECTURE.md)**。
+
+### 核心架构 (Four-Layer Architecture)
+
+本项目采用严格的四层分层架构，确保职责单一，防止腐化。
+
+| 层级 | 名称 | 职责 | 依赖关系 |
+| :--- | :--- | :--- | :--- |
+| **L4** | **Gameplay** | 纯粹的玩法逻辑 (ECS Systems)。例如：扣血、移动、技能释放。 | 依赖 Engine |
+| **L3** | **Engine** | 游戏引擎核心。负责对象生命周期、房间管理、物理世界 (Jolt)、ECS 注册表 (EnTT)。 | 依赖 Network |
+| **L2** | **Network** | 网络底层。负责 UDP 收发、KCP 协议处理、消息分发。**严禁包含玩法逻辑**。 | 依赖 Core |
+| **L1** | **Core** | 基础设施。日志 (spdlog)、配置 (yaml-cpp)、数学库 (glm)。 | 无依赖 |
+
+### 关键技术选型
+
+| 领域 | 选型 | 理由 |
+| :--- | :--- | :--- |
+| **语言** | **C++17** | 兼顾现代特性与稳定性。 |
+| **ECS** | **EnTT** | 业界性能最强的 C++ ECS 框架，优于 OOP 继承。 |
+| **物理** | **Jolt Physics** | 多线程性能极佳的次世代物理引擎 (Horizon 使用)。 |
+| **并发** | **ASIO + Strand** | 使用 Strand 实现无锁并发，每个房间单线程处理，避免 Mutex 死锁。 |
+
+### 开发规范 (AI & Human)
+
+为了保持代码质量，所有贡献者（包括 AI 辅助）必须遵守 [agents.md](file:///d:/user/desktop/demo/cpp-server/agents.md) 中的规范：
+*   **无锁编程**：业务逻辑中禁止使用 `std::mutex`，必须通过 `asio::post` 投递到房间的 Strand 队列。
+*   **内存安全**：禁止 `new/delete`，网络回调必须使用 `std::weak_ptr` 捕获会话。
+*   **配置驱动**：所有参数必须通过 `config.yaml` 加载。
+
 ## 构建状态
 
 项目已配置完成，依赖项 (KCP, ASIO, Protobuf, Abseil) 将通过 CMake `FetchContent` 自动下载并构建。
@@ -63,6 +94,27 @@ Timer → SessionManager::update_all（驱动 KCP）
 - `SessionManager::handle_input` 如何在并发下安全地查找/创建会话
 - `UdpServer` 的 `strand` 用法与定时驱动
 - `Dispatcher` 的消息路由与注册接口
+
+## 部署 (Docker)
+
+推荐使用 Docker 进行生产环境部署，以解决依赖和环境一致性问题。
+
+1.  **构建并启动**：
+    ```bash
+    docker-compose up -d --build
+    ```
+    
+2.  **查看日志**：
+    ```bash
+    docker-compose logs -f
+    ```
+
+3.  **停止服务**：
+    ```bash
+    docker-compose down
+    ```
+
+更多部署细节请参考 [Dockerfile](file:///d:/user/desktop/demo/cpp-server/Dockerfile) 和 [docker-compose.yml](file:///d:/user/desktop/demo/cpp-server/docker-compose.yml)。
 
 ## 构建原理与过程详解 (Under the Hood)
 

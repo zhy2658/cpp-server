@@ -5,8 +5,8 @@
 #include <atomic>
 #include <thread>
 #include <mutex>
-#include "session_manager.h"
-#include "config.h"
+#include "network/session_manager.h"
+#include "core/config.h"
 
 class UdpServer {
 public:

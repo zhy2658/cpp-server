@@ -145,8 +145,7 @@ add_executable(server ${SOURCES} ${PROTO_SRCS} ${PROTO_HDRS})
 # ==========================================
 # 当代码里写 #include 时，编译器去这些目录下找
 target_include_directories(server PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include     # 项目的 include 目录
-    ${CMAKE_CURRENT_SOURCE_DIR}/src         # 项目的 src 目录
+    ${CMAKE_CURRENT_SOURCE_DIR}/src         # 项目的 src 目录 (包含 core, network, engine, gameplay)
     ${CMAKE_CURRENT_BINARY_DIR}             # 存放生成的 .pb.h 目录
     ${asio_SOURCE_DIR}/asio/include         # asio 库头文件
     ${kcp_SOURCE_DIR}                       # kcp 库头文件

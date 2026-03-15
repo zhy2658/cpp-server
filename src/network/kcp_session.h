@@ -6,7 +6,7 @@
 #include <mutex>
 #include <asio.hpp>
 #include "ikcp.h"
-#include "config.h"
+#include "core/config.h"
 
 class KcpSession : public std::enable_shared_from_this<KcpSession> {
 public:

@@ -2,6 +2,16 @@
 
 本文档旨在说明 `cpp-server` 项目的整体架构、技术选型以及后续演进路线，作为开发过程中的最高指导原则，防止代码腐化和重复造轮子。
 
+## 索引 (Index)
+
+*   [协议与消息定义规范 (Protocol Design)](docs/protocol_design.md)
+*   [游戏循环与房间生命周期 (Game Loop & Room Lifecycle)](docs/game_loop.md)
+*   [数据存储与持久化设计 (Storage Design)](docs/storage_design.md)
+*   [运维与监控标准 (Ops & Monitoring)](docs/ops_guide.md)
+*   [客户端接入指南 (Client Integration Guide)](docs/client_integration.md)
+*   [服务器校验与防篡改机制 (Server Validation)](docs/server_validation.md)
+*   [伤害计算与延迟补偿 (Damage Calculation)](docs/damage_calculation.md)
+
 ## 1. 架构评估：保留现有 C++ 架构
 
 **结论**：**当前架构非常合理且专业，强烈建议保留，不建议迁移至 Qt。**
@@ -17,6 +27,8 @@
 
 ### 2.1. C++ Server (cpp-server)
 
+> 详见: [游戏循环与房间生命周期 (Game Loop)](docs/game_loop.md) | [伤害计算与延迟补偿 (Damage)](docs/damage_calculation.md)
+
 **定位**：**CPU 密集型 + 强实时**。负责游戏内的每一帧计算。
 
 - **核心战斗循环 (Tick Loop)**：维持固定帧率（如 60Hz/128Hz）的逻辑驱动。
@@ -29,6 +41,9 @@
 - **视野管理 (AOI)**：计算九宫格/四叉树，只向玩家同步其视野范围内的实体（吃鸡大地图必备）。
 
 ### 2.2. Golang Server (go-server)
+
+> 详见: [数据存储与持久化设计 (Storage Design)](docs/storage_design.md)
+
 **定位**：**I/O 密集型 + 弱实时**。负责与数据库、Web 前端交互。
 *   **接入层**：账号注册、登录鉴权 (HTTP/HTTPS)、JWT Token 生成。
 *   **局外经济 (Meta Economy)**：商城购买、背包管理、皮肤库存（读写 MySQL/Redis）。**涉及真金白银的逻辑必须在此层处理**。
@@ -39,6 +54,8 @@
 **通信方式**：内网服务间推荐使用 **gRPC** 或 **Redis Pub/Sub**。
 
 ### 2.3. 资源校验与经济分工原则
+
+> 详见: [服务器校验与防篡改机制 (Server Validation)](docs/server_validation.md)
 
 为了保证安全与性能的平衡，严格区分局内与局外逻辑：
 
@@ -84,6 +101,8 @@
 
 ## 6. 工程化与运维补充建议
 
+> 详见: [运维与监控标准 (Ops & Monitoring)](docs/ops_guide.md) | [协议与消息定义规范 (Protocol)](docs/protocol_design.md)
+
 为了更好地落地该项目，补充以下工程化建议：
 
 1. **统一构建环境 (Docker)**：
@@ -99,6 +118,8 @@
    - 支持热加载配置（如调整武器伤害数值），无需重启服务器。
 
 ## 7. 高效测试工具链：KcpProbe 与 Unity 协同开发
+
+> 详见: [客户端接入指南 (Client Integration Guide)](docs/client_integration.md)
 
 鉴于 Unity 测试流程繁琐（启动慢、编译久），**强烈建议**采用“工具先行”的开发模式。你已经拥有一套完美的工具链：**cpp-server (后端) + KcpProbe (调试终端/协议验证) + Unity (最终表现)**。
 

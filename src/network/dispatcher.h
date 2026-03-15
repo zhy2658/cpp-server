@@ -5,7 +5,7 @@
 #include <iostream>
 #include <asio.hpp>
 #include "base.pb.h"
-#include "kcp_session.h"
+#include "network/kcp_session.h"
 
 class Dispatcher {
 public:

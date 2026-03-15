@@ -138,6 +138,7 @@
 | **依赖管理** | **CMake FetchContent** | 原生支持，无需安装额外包管理器 | 手动下载 zip, git submodule |
 | **AOI 算法** | **Grid / Quadtree** | 大地图视野管理标准解法 | 全广播 (O(N^2) 性能灾难) |
 | **同步架构** | **Sub-tick** | CS2 同款架构，实现无限 Tick 射击精度 | 传统 Tick-based (受限于 64Hz) |
+| **性能优化** | **LOD/BroadPhase** | 粗细检测分离 + 频率降级，降低无效计算 | 全量高精计算 |
 
 ### 8.2. 架构分层原则 (Layered Architecture)
 

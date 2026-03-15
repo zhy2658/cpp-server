@@ -8,7 +8,7 @@
 
 ## 架构与规范
 
-详细的设计文档请参考 **[ARCHITECTURE.md](file:///d:/user/desktop/demo/cpp-server/ARCHITECTURE.md)**。
+详细的设计文档请参考 **[ARCHITECTURE.md](./ARCHITECTURE.md)**。
 
 ### 核心架构 (Four-Layer Architecture)
 

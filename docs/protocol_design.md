@@ -10,6 +10,19 @@
     [4 bytes KCP Conv] [KCP Header...] [Protobuf Payload]
     ```
 
+### 1.1 KCP 通道划分 (Channels)
+为了平衡实时性与可靠性，使用不同的 KCP 通道：
+
+*   **Channel 0 (Unreliable)**: 移动同步 (`Input`, `Snapshot`)。丢包不重传，永远只处理最新的包。
+*   **Channel 1 (Reliable)**: 关键逻辑 (`Fire`, `Hit`, `Die`, `JoinRoom`)。必须到达，且有序。
+
+### 1.2 MTU 与分包 (Fragmentation)
+*   **MTU 限制**: 默认 `1200` 字节 (保守值，适应公网环境)。
+*   **分包策略**:
+    *   KCP 协议层自动处理分包 (Fragment)。
+    *   **应用层限制**: 单个 Protobuf 包体尽量控制在 1KB 以内。
+    *   **大包处理**: 如需发送地图数据 (>10KB)，应在应用层拆分为多个 Chunk (`MapDataChunk { index, total, data }`)，避免阻塞 KCP 发送队列。
+
 ## 2. 消息 ID 分段 (Message ID Allocation)
 
 为了避免 ID 冲突，严格按照功能模块划分 MsgID：
@@ -35,6 +48,13 @@
 *   **Input**: 客户端以 60Hz/128Hz 采样输入，发送 `PlayerInput { move_dir, view_angle, buttons, sub_tick_time }`。
 *   **Snapshot**: 服务器以 20Hz/30Hz 广播 `WorldSnapshot { entities: [ {id, pos, vel, anim_state} ] }`。
 *   **Event**: 关键事件（开火、击杀）实时可靠发送。
+
+### 3.3 Protobuf 消息定义
+
+最新的消息结构定义请直接参考项目源码：
+*   **[proto/base.proto](../../proto/base.proto)**
+
+该文件包含了 System, Battle Sync, Battle Event 等所有核心协议的 Protobuf 定义，是开发的唯一真理来源 (Single Source of Truth)。
 
 ## 4. 错误码定义 (Error Codes)
 

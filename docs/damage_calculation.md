@@ -1,19 +1,67 @@
-# FPS 核心技术：延迟补偿与 Sub-tick 架构解析
+# 战斗判定与延迟补偿 (Combat & Lag Compensation)
 
 本文档详细解析了 3D PVP 射击游戏中的核心同步技术，包括延迟补偿 (Lag Compensation)、CS2 的 Sub-tick 架构以及服务器性能优化策略。
 
-## 1. 延迟补偿 (Lag Compensation) 流程
+## 1. 伤害判定模型 (Damage Model)
+
+### 1.1 基础伤害公式
+服务器权威计算伤害，公式如下：
+```cpp
+FinalDamage = (BaseDamage * DistanceFactor * BodyPartFactor) - ArmorReduction
+```
+
+*   **BaseDamage**: 武器基础伤害 (配置表)。
+*   **DistanceFactor**: 距离衰减系数。
+    *   例如：`0-10m: 1.0`, `10-50m: 0.8`, `>50m: 0.5`。
+*   **BodyPartFactor**: 部位系数。
+    *   `Head`: 4.0 (爆头)
+    *   `Chest`: 1.0
+    *   `Stomach`: 1.25
+    *   `Legs`: 0.75
+*   **ArmorReduction**: 护甲减免 (如 `ArmorValue * 0.5`)。
+
+### 1.2 ECS 与 Jolt 集成
+伤害判定系统 (`CombatSystem`) 依赖 Jolt Physics 进行精确检测。
+
+```cpp
+// 伪代码：CombatSystem 处理开火请求
+void CombatSystem::handle_fire(entt::registry& registry, FireRequest& req) {
+    // 1. 获取开火者位置和朝向
+    auto& transform = registry.get<Transform>(req.shooter_id);
+    
+    // 2. 延迟补偿回溯 (Rollback)
+    lag_compensation_sys.rollback_world(req.timestamp);
+    
+    // 3. Jolt 射线检测
+    JPH::RayCast ray(transform.pos, req.direction * weapon.range);
+    JPH::RayCastResult hit;
+    if (physics_system.CastRay(ray, hit)) {
+        // 4. 获取命中实体
+        entt::entity target = physics_system.GetEntity(hit.BodyID);
+        
+        // 5. 判定命中部位 (通过 SubShapeID 映射骨骼)
+        float part_factor = get_body_part_factor(hit.SubShapeID);
+        
+        // 6. 扣血
+        apply_damage(target, weapon.damage * part_factor);
+    }
+    
+    // 7. 恢复现场 (Restore)
+    lag_compensation_sys.restore_world();
+}
+```
+
+## 2. 延迟补偿 (Lag Compensation) 流程
 
 在网络延迟存在的情况下，如何保证“所见即所得”的射击体验？核心机制是服务器的**时间回溯**。
 
-### 1.1 完整交互时序图
+### 2.1 完整交互时序图
 
 ```mermaid
 sequenceDiagram
     participant A as 客户端 A (攻击者)
     participant S as 服务器 (权威)
     participant B as 客户端 B (受害者)
-    participant O as 其他客户端
 
     Note over A: 玩家按下开火键 (t=1000ms)
     A->>A: 立即播放枪声/火光 (客户端预测)
@@ -31,48 +79,14 @@ sequenceDiagram
         S->>S: 扣除 B 血量
         S->>A: 广播 {Event:HIT, Target:B, Damage:100}
         S->>B: 广播 {Event:HIT, Target:B, Damage:100}
-        S->>O: 广播 {Event:HIT, Target:B, Damage:100}
     end
-
-    B->>B: 播放受击动画/死亡
-    A->>A: 显示击杀图标
 ```
 
-### 1.2 处理流程图
+## 3. CS2 Sub-tick 架构解析
 
-```mermaid
-flowchart TD
-    A[玩家A按下攻击键] --> B{客户端A}
-    B --> C[播放攻击动画<br>（客户端预测）]
-    B --> D[向服务器发送<br>“攻击请求”数据包]
+CS2 引入的 Sub-tick 技术旨在消除 Tickrate (64/128) 带来的手感差异。
 
-    D --> E[服务器<br>（权威计算中心）]
-    
-    subgraph E [服务器核心计算]
-        E1[校验攻击合法性<br>（冷却/距离/状态）]
-        E2[命中判定<br>（基于服务器位置/延迟补偿）]
-        E3[伤害计算<br>（攻击力/防御/暴击）]
-        E4[更新玩家B血量]
-    end
-    
-    E4 --> F[向全服广播<br>“玩家B受伤害”事件]
-    
-    F --> G[客户端A]
-    F --> H[客户端B]
-    F --> I[其他客户端]
-    
-    G --> G1[播放受击/扣血特效]
-    H --> H1[自身受击表现<br>显示伤害数字]
-    I --> I1[同步看到B掉血]
-```
-
----
-
-## 2. CS2 Sub-tick 架构解析
-
-CS2 引入的 Sub-tick 技术是对传统 Tick-based 架构的重大革命，旨在消除 Tickrate (64/128) 带来的手感差异。
-
-### 2.1 传统 vs Sub-tick
+### 3.1 传统 vs Sub-tick
 
 | 特性 | 传统 FPS (CS:GO) | CS2 (Sub-tick) |
 | :--- | :--- | :--- |
@@ -81,56 +95,12 @@ CS2 引入的 Sub-tick 技术是对传统 Tick-based 架构的重大革命，旨
 | **回溯逻辑** | 回溯到第 10 帧的整点位置 | 回溯到第 10 帧位置 + **3.14ms 的插值位移** |
 | **射击体验** | 受 Tickrate 限制，可能有微小偏差 | **无限 Tick** 的判定精度 |
 
-### 2.2 实现关键点
+### 3.2 实现关键点
 1.  **高精度协议**：客户端上报的包必须包含 `Ratio` (帧内偏移量) 或 `Microsecond Timestamp`。
 2.  **连续物理模拟**：服务器必须支持在两个物理帧之间进行插值 (Interpolation)，构建出“不存在于任何 Tick 上”的中间状态。
 
----
+## 4. 服务器性能优化策略
 
-## 3. 服务器性能优化策略
-
-如何在保证权威计算（防作弊）的同时，承载大量玩家？需要宏观与微观的结合。
-
-```mermaid
-flowchart LR
-    subgraph A[宏观优化：减少计算量]
-        direction LR
-        A1[区域管理与<br>AOI<br>（只关心附近玩家）]
-        A2[网格/空间分割<br>（只检测相邻格子）]
-    end
-
-    subgraph B[微观优化：降低精度与频率]
-        direction LR
-        B1[粗检测与细检测<br>（先包围盒后网格）]
-        B2[计算频率降级<br>（不同距离不同更新率）]
-    end
-
-    subgraph C[软硬件结合：提升算力]
-        direction LR
-        C1[多线程/ECS架构<br>（并行计算）]
-        C2[分布式/负载均衡<br>（分区分服）]
-    end
-
-    A & B & C --> D[结论：服务器在<br>“可接受的成本”下<br>保证了公平性]
-```
-
-### 3.1 核心优化手段
 *   **AOI (Area of Interest)**: 使用九宫格或四叉树算法，只对玩家视野内的实体进行同步和物理检测。
 *   **LOD (Level of Detail)**: 远处的物体降低物理检测频率（如每秒只算 10 次），近处的物体全频率计算（每秒 60 次）。
 *   **ECS 并行化**: 利用 EnTT 等框架，将无依赖的系统（如移动、回血）分散到多核 CPU 上并行执行。
-
-### 3.2 微观优化：降低精度与频率
-
-服务器不需要在所有时刻都进行“绝对精确”的物理检测，合理的降级是性能的关键。
-
-*   **粗检测与细检测 (Broad phase & Narrow phase)**
-    *   **原理**：这是 3D 游戏通用的优化手段。服务器会先使用简单的包围盒（比如一个把角色整个包起来的长方体 AABB 或球体）进行快速检测。如果连包围盒都没碰到，那肯定没击中，直接跳过。
-    *   **应用**：只有当包围盒检测通过了，才会进行更精确的、基于武器模型或骨骼的细检测。这就避免了大量无谓的高精度计算。
-*   **计算频率降级 (LOD for Simulation)**
-    *   **原理**：服务器不会对所有玩家都一视同仁。
-    *   **应用**：对于正在激烈战斗的玩家，它可能每 0.1 秒就进行一次精确计算；对于在安全区挂机的玩家，或者离你很远的玩家，计算频率可能会降到每秒 1-2 次，甚至不计算，只同步最终位置。
-
-### 3.3 软硬件结合：提升绝对算力
-
-*   **多线程/ECS 架构**：利用现代 CPU 的多核特性，将物理、逻辑、网络分线程并行处理。
-*   **分布式/负载均衡**：当单机承载达到上限时，将大地图划分为多个 Zone，由不同的物理服务器分担计算压力。

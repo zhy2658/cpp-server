@@ -26,11 +26,48 @@ C++ 战斗服原则上**不直接连接数据库 (MySQL)**，只连接 **Redis**
     3.  C++ -> Golang (`ReportBattleResult` RPC): 发送战报。
     4.  Golang 校验战报合法性，写入 MySQL，更新排行榜。
 
-## 3. Redis Key 设计规范 (Draft)
+### 2.3 RPC 协议格式 (gRPC / Internal TCP)
+推荐使用 gRPC 进行服务间通信。
+
+```protobuf
+// battle_service.proto
+service BattleService {
+    // 战斗结束上报
+    rpc ReportBattleResult(BattleResultRequest) returns (BattleResultResponse);
+}
+
+message BattleResultRequest {
+    int64 room_id = 1;
+    int64 end_time = 2;
+    repeated PlayerResult players = 3;
+}
+
+message PlayerResult {
+    int64 user_id = 1;
+    int32 kills = 2;
+    int32 deaths = 3;
+    int32 damage_dealt = 4;
+    map<int32, int32> items_used = 5; // item_id -> count
+}
+```
+
+## 3. 断线重连 (Reconnection)
+
+为了支持玩家掉线后快速重回战斗：
+
+1.  **Session 保持**: 玩家掉线后，C++ 服务器保留其 `Entity` 和 `Session` 对象（标记为 `Disconnected`）一段时间（如 60秒）。
+2.  **重连流程**:
+    *   Client -> Golang (Login): 获取当前是否有未结束的战斗。
+    *   Golang -> Redis: 查询 `user:{id}:session` 获取 `gate_ip` 和 `token`。
+    *   Golang -> Client: 返回战斗服地址。
+    *   Client -> C++ (UDP): 发送 `HandshakeReq { token, is_reconnect: true }`。
+    *   C++: 校验 Token，恢复 `Session` 关联，下发全量 `WorldSnapshot`。
+
+## 4. Redis Key 设计规范 (Draft)
 
 *   `room:{id}:info` -> Hash { map_id, create_time, status }
-*   `user:{id}:session` -> String { token, gate_ip, gate_port }
+*   `user:{id}:session` -> String { token, gate_ip, gate_port, room_id }
 *   `rank:season:{id}` -> ZSet { score, user_id }
 
-## 4. 灾备与回档
+## 5. 灾备与回档
 *   **崩溃恢复**: C++ 进程崩溃会导致房间销毁。需依靠 Golang 服检测心跳超时，退还玩家门票，并记录异常日志。

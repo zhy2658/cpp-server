@@ -1,32 +1,85 @@
 syntax = "proto3";
-
 package kcp_server;
 
+// 基础消息包 (所有业务包的信封)
 message BaseMessage {
-    uint32 msg_id = 1;
-    bytes payload = 2;
-    uint32 seq = 3;
-    uint64 timestamp = 4;
+    uint32 msg_id = 1;      // 消息ID (见分段表)
+    uint32 seq = 2;         // 请求序列号 (用于RPC)
+    bytes payload = 3;      // 业务数据的序列化二进制
+}
+
+// --------------------------------------------------
+// System (0-99)
+// --------------------------------------------------
+message HandshakeReq {
+    string token = 1;       // 登录Token
+    bool is_reconnect = 2;  // 是否断线重连
+}
+
+message HandshakeRsp {
+    uint32 conv = 1;        // 分配的 KCP Conv ID
+    uint32 server_time = 2; // 服务器当前时间戳 (ms)
 }
 
 message Ping {
-    string content = 1;
-    uint64 send_time = 2;
+    uint32 client_time = 1; // 客户端发送时间
 }
 
 message Pong {
-    string content = 1;
-    uint64 recv_time = 2;
+    uint32 client_time = 1; // 回传客户端时间
+    uint32 server_recv = 2; // 服务器接收时间
+    uint32 server_send = 3; // 服务器发送时间
 }
 
-message RpcRequest {
-    string method = 1;
-    string params = 2;
+// --------------------------------------------------
+// Battle Sync (2000-2999)
+// --------------------------------------------------
+message Vector3 {
+    float x = 1;
+    float y = 2;
+    float z = 3;
 }
 
-message RpcResponse {
-    string method = 1;
-    string result = 2;
-    int32 code = 3;
-    string error_message = 4;
+// 客户端输入 (60Hz/128Hz)
+message PlayerInput {
+    uint32 frame_id = 1;    // 客户端帧号
+    Vector3 move_dir = 2;   // 移动方向
+    float yaw = 3;          // 水平视角
+    float pitch = 4;        // 垂直视角
+    uint32 buttons = 5;     // 按键位掩码 (Jump, Crouch, etc.)
+    float sub_tick = 6;     // 帧内时间偏移 (0.0 - 1.0)
+}
+
+// 世界快照 (20Hz/30Hz)
+message WorldSnapshot {
+    uint32 seq = 1;         // 快照序列号
+    uint32 server_time = 2; // 服务器时间戳
+    repeated EntityState entities = 3; // 视野内所有实体
+}
+
+message EntityState {
+    uint32 entity_id = 1;
+    Vector3 pos = 2;
+    Vector3 vel = 3;
+    float yaw = 4;
+    int32 hp = 5;
+    uint32 state_flags = 6; // 蹲下、跳跃中、死亡
+}
+
+// --------------------------------------------------
+// Battle Event (3000-3999)
+// --------------------------------------------------
+message FireEvent {
+    uint32 shooter_id = 1;
+    Vector3 origin = 2;
+    Vector3 direction = 3;
+    uint32 weapon_id = 4;
+}
+
+message HitEvent {
+    uint32 target_id = 1;
+    uint32 shooter_id = 2;
+    int32 damage = 3;
+    bool is_headshot = 4;
+    int32 remaining_hp = 5;
 }

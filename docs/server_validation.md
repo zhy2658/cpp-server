@@ -1,62 +1,62 @@
 # 服务器校验与防篡改机制 (Server Validation & Anti-Cheat)
 
-本文档详细阐述了 PVP 游戏服务器如何防止客户端作弊和消息篡改。构建安全的游戏环境不能依赖单一技术，而必须建立一套多层防御体系。
+本文档详细阐述了 PVP 游戏服务器如何防止客户端作弊和消息篡改。
 
 ## 1. 核心原则：永不信任客户端
 
 **所有的防御机制都基于一个核心假设：客户端运行在用户的机器上，因此它完全不可信。**
-黑客可以修改内存、拦截网络包、反编译代码。唯一安全的只有服务器端。
-
----
 
 ## 2. 四层防御体系
 
 ### 第一层：传输通道加密 (防窃听)
-*   **目的**：防止中间人 (Man-in-the-Middle) 窃听和篡改数据包。
-*   **手段**：
-    *   **DTLS (Datagram TLS)**：UDP 版的 SSL/TLS，提供标准的高强度加密。
-    *   **自定义加密**：使用 Diffie-Hellman 密钥交换协商 Session Key，然后使用 AES/ChaCha20 对 UDP 包体进行对称加密。
-*   **局限性**：只能保护数据在网络传输中不被第三方修改。无法防止外挂直接在客户端内存中修改数据。
+*   **推荐方案**: **AES-GCM-256** 或 **ChaCha20-Poly1305**。
+*   **握手流程**:
+    1.  Client -> Server: `Hello { ClientRandom, PubKey_C }` (ECDH)
+    2.  Server -> Client: `Welcome { ServerRandom, PubKey_S }` (ECDH)
+    3.  双方计算共享密钥 `SharedSecret`。
+    4.  派生会话密钥 `SessionKey`。
 
 ### 第二层：数据包签名与校验 (防篡改)
-*   **目的**：确保数据包是由合法的客户端发出，且内容未被修改。
-*   **手段**：
-    *   **HMAC 哈希校验**：客户端在发送关键指令（如 `Fire`）时，附带一个用 Session Key 计算的哈希签名。服务器收到后重新计算，若不匹配则丢弃。
-    *   **序列号 (Sequence ID)**：每个包通过递增 ID 防止丢包和乱序。
-    *   **时间戳 (Timestamp)**：防止**重放攻击 (Replay Attack)**。服务器记录收到的最大时间戳，若收到旧包（试图重复释放技能），直接丢弃。
+*   **HMAC**: 关键指令（如 `Fire`）附带 HMAC-SHA256 签名。
+*   **Replay Protection**: 使用滑动窗口机制检查 `Sequence ID` 和 `Timestamp`，拒绝重放包。
 
-### 第三层：逻辑混淆与代码保护 (防逆向)
-*   **目的**：增加黑客逆向分析客户端逻辑和提取密钥的成本。
-*   **手段**：
-    *   **代码混淆**：打乱控制流，重命名变量，插入花指令。
-    *   **完整性校验**：游戏运行时自检，发现代码段被修改（如被 Hook）则闪退。
-    *   **反调试**：检测调试器（如 OD, IDA）的附加。
-    *   **关键逻辑上云**：将核心公式（如伤害计算公式）完全放在服务器，客户端只负责显示，不包含计算逻辑。
+### 第三层：ECS 逻辑校验 (EnTT Implementation)
+利用 EnTT 系统在每一帧进行逻辑检查。
+
+```cpp
+// 移动校验系统
+void MovementValidationSystem::update(entt::registry& registry, float dt) {
+    auto view = registry.view<const Transform, const Velocity, PlayerState>();
+    
+    view.each([dt](const auto entity, const auto& transform, const auto& vel, auto& state) {
+        // 1. 速度检查 (SpeedHack)
+        float speed = glm::length(vel.linear);
+        if (speed > MAX_SPEED * 1.1f) { // 允许 10% 误差
+            // 触发回拉 (Rubberbanding)
+            state.flags |= STATE_ILLEGAL_MOVE;
+            LOG_WARN("SpeedHack detected: entity {}", entity);
+        }
+        
+        // 2. 穿墙检查 (Noclip)
+        // 使用上一次位置到当前位置发射射线
+        if (physics_world.RayCast(state.last_pos, transform.pos)) {
+             // 修正位置到墙前
+             transform.pos = state.last_pos;
+        }
+    });
+}
+```
 
 ### 第四层：服务器端行为检测 (最终防线)
-*   **目的**：即使黑客破解了前三层，伪造了合法的协议包，服务器通过逻辑校验仍能识别作弊。
-*   **手段**：
-    *   **移动校验 (Speed Hack)**：计算玩家两帧之间的移动距离。如果 `dist > max_speed * delta_time`，判定为加速挂，强制拉回 (Rubberbanding)。
-    *   **攻击校验 (Attack Validation)**：
-        *   **射速检查**：检查两次开火间隔是否小于武器最小间隔。
-        *   **视线检查 (Raycast)**：检查攻击者与受害者之间是否有墙壁阻挡（防透视/穿墙挂）。
-        *   **弹药检查**：服务器记录弹夹剩余量，防止无限子弹。
-    *   **资源校验**：
-        *   **局内经济 (In-Game Economy)**：如 CS:GO 买枪、王者荣耀买装备。**必须由 C++ 战斗服处理**。服务器维护单局内的金币数值，收到购买请求后校验余额并扣除，绝不信任客户端的扣款结果。
-        *   **局外经济 (Meta Economy)**：如商城买皮肤、抽卡。**必须由 Golang 业务服处理**。涉及数据库事务和持久化，通过 HTTP/gRPC 接口进行。
-    *   **AI 异常行为分析**：
-        *   **自瞄检测**：统计玩家的准星移动轨迹，如果是瞬间锁定头部（且无中间过程），判定为自瞄。
-        *   **数据异常**：如 1 级账号打出 99999 伤害。
-
----
+*   **射速检查**: 检查两次开火间隔是否小于武器最小间隔。
+*   **自瞄检测**: 统计玩家准星的 Angular Velocity，如果瞬间锁定头部且无中间平滑过程，标记可疑。
+*   **资源校验**: 局内金币由 C++ 权威计算，不接受客户端上报的扣款结果。
 
 ## 3. 总结
 
-| 防御层级 | 针对威胁 | 技术手段 | 效果 |
-| :--- | :--- | :--- | :--- |
-| **L1 传输层** | 网络抓包、中间人攻击 | DTLS, AES/ChaCha20 | 数据加密，防窃听 |
-| **L2 协议层** | 篡改包内容、重放攻击 | HMAC 签名, 序列号, 时间戳 | 保证包的完整性 |
-| **L3 应用层** | 逆向分析、外挂制作 | 代码混淆, 反调试, 逻辑上云 | 提高破解门槛 |
-| **L4 逻辑层** | **所有作弊行为** | **服务器逻辑校验**, 行为分析 | **防外挂的核心** |
-
-**结论**：加密只是门锁，服务器校验才是保镖。真正的安全是建立在“服务器权威计算”的基础上的。
+| 防御层级 | 针对威胁 | 技术手段 |
+| :--- | :--- | :--- |
+| **L1 传输层** | 网络抓包 | AES-GCM / ChaCha20 |
+| **L2 协议层** | 篡改, 重放 | HMAC, SeqID, Timestamp |
+| **L3 逻辑层** | 加速, 穿墙 | EnTT System 校验, Jolt RayCast |
+| **L4 行为层** | 自瞄, 透视 | 统计学分析, 启发式检测 |

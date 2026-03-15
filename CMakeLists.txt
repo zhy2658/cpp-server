@@ -133,6 +133,8 @@ endforeach()
 # 3. 收集业务源码
 # ==========================================
 file(GLOB_RECURSE SOURCES "src/*.cpp" "src/*/*.cpp" "src/*/*/*.cpp")
+# 排除 client 目录下的文件，避免 server 目标包含多个 main 函数
+list(FILTER SOURCES EXCLUDE REGEX "src/client/.*")
 
 # ==========================================
 # 4. 创建最终的可执行文件目标
@@ -172,4 +174,34 @@ if(WIN32)
     target_link_libraries(server PRIVATE ws2_32) # Windows 下必须链接的网络底层库
 else()
     target_link_libraries(server PRIVATE pthread) # Linux 下必须链接的多线程库
+endif()
+
+# ==========================================
+# 7. Console Client Target (轻量级调试客户端)
+# ==========================================
+add_executable(console_client 
+    src/client/console_client.cpp 
+    src/network/kcp_session.cpp
+    ${PROTO_SRCS} 
+    ${PROTO_HDRS}
+)
+
+target_include_directories(console_client PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_BINARY_DIR}
+    ${asio_SOURCE_DIR}/asio/include
+    ${kcp_SOURCE_DIR}
+    ${protobuf_SOURCE_DIR}/src
+)
+
+target_link_libraries(console_client PRIVATE
+    kcp
+    protobuf::libprotobuf
+    yaml-cpp
+)
+
+if(WIN32)
+    target_link_libraries(console_client PRIVATE ws2_32)
+else()
+    target_link_libraries(console_client PRIVATE pthread)
 endif()

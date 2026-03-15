@@ -33,7 +33,7 @@ void broadcast_world_snapshot(SessionManager& session_mgr, uint32_t server_time,
     base.set_msg_id(msg_id::WorldSnapshot);
     base.set_payload(payload);
     std::string data = base.SerializeAsString();
-    std::cout << "snapshot: " << data << std::endl;
+    // std::cout << "snapshot: " << data << std::endl;
     session_mgr.broadcast(data.data(), data.size());
 }
 

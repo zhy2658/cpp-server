@@ -1,10 +1,9 @@
 # KCP Server Framework
 
 这是一个基于 C++17、ASIO、KCP、Protobuf 的高性能 UDP 服务器框架。本文档涵盖：
-- 架构总览与运行时数据流
-- 代码阅读顺序与关键文件
-- 构建、运行、扩展新消息的步骤
-- 常见问题与排错
+- 架构设计与规范
+- 核心系统层级与数据流
+- 依赖管理与构建原理
 
 ## 架构与规范
 
@@ -35,96 +34,110 @@
 
 ### 开发规范 (AI & Human)
 
-为了保持代码质量，所有贡献者（包括 AI 辅助）必须遵守 [agents.md](file:///d:/user/desktop/demo/cpp-server/agents.md) 中的规范：
+为了保持代码质量，所有贡献者（包括 AI 辅助）必须遵守 [agents.md](./agents.md) 中的规范：
 *   **无锁编程**：业务逻辑中禁止使用 `std::mutex`，必须通过 `asio::post` 投递到房间的 Strand 队列。
 *   **内存安全**：禁止 `new/delete`，网络回调必须使用 `std::weak_ptr` 捕获会话。
 *   **配置驱动**：所有参数必须通过 `config.yaml` 加载。
-
-## 构建状态
-
-项目已配置完成，依赖项 (KCP, ASIO, Protobuf, Abseil) 将通过 CMake `FetchContent` 自动下载并构建。
-由于 Protobuf 需要从源码编译，**首次构建可能需要较长时间** (取决于机器性能，通常 5-15 分钟)。
 
 ## 依赖说明
 
 *   **ASIO**: header-only，自动下载。
 *   **KCP**: 源码集成，自动下载 (已 Patch 适配)。
 *   **Protobuf**: 源码编译 (v21.12)，自动下载。
-*   **spdlog / yaml-cpp**: 为简化构建流程，目前以标准 IO 和默认配置代替（可按需恢复）。
+*   **spdlog / yaml-cpp**: 为简化构建流程，目前以标准 IO 和默认配置代替。
 
-## 架构总览
+## 系统架构详解
 
-- 网络 I/O：基于 ASIO 的 UDP 层，位于 [udp_server.h](file:///d:/user/Deaktop/work/cpp-server/src/udp_server.h) / [udp_server.cpp](file:///d:/user/Deaktop/work/cpp-server/src/udp_server.cpp)
-- 会话抽象：每个 conv 一个 KCP 会话，负责分片/重传/流控，位于 [kcp_session.h](file:///d:/user/Deaktop/work/cpp-server/src/kcp_session.h) / [kcp_session.cpp](file:///d:/user/Deaktop/work/cpp-server/src/kcp_session.cpp)
-- 会话管理：分片(shard) + 读写锁管理会话生命周期，位于 [session_manager.h](file:///d:/user/Deaktop/work/cpp-server/src/session_manager.h) / [session_manager.cpp](file:///d:/user/Deaktop/work/cpp-server/src/session_manager.cpp)
-- 消息分发：解析 BaseMessage，按 msg_id 调用处理器，位于 [dispatcher.h](file:///d:/user/Deaktop/work/cpp-server/src/dispatcher.h)
-- 协议模型：`proto/base.proto` → 生成 [base.pb.h](file:///d:/user/Deaktop/work/cpp-server/build/base.pb.h) / [base.pb.cc](file:///d:/user/Deaktop/work/cpp-server/build/base.pb.cc)
-- 配置：默认配置结构体 [config.h](file:///d:/user/Deaktop/work/cpp-server/src/config.h)（支持 KCP 参数、线程数等）
-- 工具：时间函数 `current_ms()` 位于 [utils.h](file:///d:/user/Deaktop/work/cpp-server/src/utils.h)
+### 1. 静态层级：谁拥有谁？ (Ownership Hierarchy)
 
-### 运行时数据流
+整个服务器架构类似一个**快递转运中心**：
 
+*   **[GameServer](src/server/game_server.h) (CEO)**
+    *   **持有**：`asio::io_context` (整个公司的**劳动力池/线程池**)。
+    *   **持有**：`UdpServer` (**前台大厅**，负责对外营业)。
+    *   **职责**：读取配置，初始化环境，启动主循环。
+
+*   **[UdpServer](src/network/udp_server.h) (前台大厅)**
+    *   **持有**：`socket` (大门，唯一的 UDP 端口)。
+    *   **持有**：`SessionManager` (**客户档案部**)。
+    *   **持有**：两个核心线程
+        *   `recv_thread`：专门负责收件（`socket.receive_from`）。
+        *   `update_thread`：专门负责打卡（驱动 KCP 的 `update` 心跳）。
+    *   **职责**：将收到的原始 UDP 包转交给 SessionManager，并驱动时间流逝。
+
+*   **[SessionManager](src/network/session_manager.h) (客户档案部)**
+    *   **持有**：`Shards` (**分片桶**)。为了防止锁冲突，将会话按 ID 拆分到 32 个桶中，每个桶有一把锁 (`std::mutex`)。
+    *   **职责**：
+        *   根据 ID (`conv`) 查找对应的 `KcpSession`。
+        *   管理会话生命周期（创建新会话、超时剔除）。
+
+*   **[KcpSession](src/network/kcp_session.h) (专属客服)**
+    *   **持有**：`ikcpcb` (KCP 协议核心结构体)。
+    *   **职责**：
+        *   **翻译**：处理 KCP 协议细节（重传、乱序重排、流控）。
+        *   **剥壳**：从 KCP 数据流中还原出完整的应用层数据包。
+
+*   **[Dispatcher](src/network/dispatcher.h) (分拣中心 - 单例)**
+    *   **持有**：`Map<msg_id, Handler>` (分发路由表)。
+    *   **职责**：根据 Protobuf 消息中的 `msg_id` 将请求分发给对应的 Handler。
+
+### 2. 动态流向：一个 Ping 包的奇幻漂流
+
+以 **Ping 请求 (ID: 1)** 为例，数据从网络到底层再返回的完整流程：
+
+#### 阶段一：接收与协议处理 (IO 线程)
+1.  **UDP 接收**：`UdpServer` 的 `recv_thread` 收到原始二进制数据。
+2.  **查找会话**：`SessionManager` 根据包头 ID 在分片桶中找到对应的 `KcpSession`。
+3.  **KCP 注入**：调用 `KcpSession::input()`，将数据喂给 KCP 协议栈。
+4.  **应用层提取**：调用 `KcpSession::try_recv()`。如果数据包完整，KCP 吐出应用层 Protobuf 二进制包。
+
+#### 阶段二：逻辑分发 (IO 线程 -> 逻辑线程)
+5.  **回调触发**：`SessionManager` 调用数据回调。
+6.  **路由分发**：`Dispatcher::dispatch()` 被调用。
+    *   解析 Protobuf 头部，识别 `msg_id = 1`。
+    *   查找注册的 `handlers::on_ping`。
+7.  **关键切换**：`Dispatcher` 使用 `asio::post(ioc, ...)`。
+    *   **关键点**：任务被封装并投递到 `io_context` 线程池，**立刻释放 IO 线程**。
+
+#### 阶段三：业务执行 (Worker 线程)
+8.  **执行逻辑**：线程池中的 Worker 线程取出任务，执行 `handlers::on_ping`。
+    *   解析 Ping，计算时间。
+    *   生成 Pong 响应。
+9.  **发送响应**：调用 `session->send(Pong数据)`。
+    *   数据被压入 `KcpSession` 的发送队列。
+
+#### 阶段四：发送 (后台驱动)
+10. **KCP 打包**：`UdpServer` 的 `update_thread` 定时（10ms）调用 `KcpSession::update()`。
+11. **实际发送**：KCP 决定发送数据（或 ACK），调用底层 `output` 回调。
+12. **UDP 发出**：数据通过 `socket` 发回客户端。
+
+```text
+[UDP Socket]
+     ⬇️ (Raw Bytes)
+[UdpServer (recv_thread)]
+     ⬇️
+[SessionManager] --> 查找/创建 Session
+     ⬇️
+[KcpSession] --> ikcp_input (处理重传/排序)
+     ⬇️ (完整业务包)
+[Dispatcher]
+     ⬇️ asio::post (切线程) 🔀
+----------------------------------------
+[Worker Thread]
+     ⬇️
+[Handler (on_ping)] --> 业务逻辑
+     ⬇️ session->send()
+[KcpSession] --> 放入发送队列
+     ⬇️ (等待 update_thread 驱动)
+[UdpServer (socket)] --> 发送回客户端
 ```
-UDP 收包 → UdpServer::do_receive
-        → SessionManager::handle_input（按 conv 找/建会话，调用 KcpSession::input）
-        → KCP 解包 → KcpSession::try_recv
-        → Dispatcher::dispatch（查表转调用业务处理器）
-        → 业务处理（如 on_ping）
-        → KcpSession::send → UDP 发送
-
-定时器（每 10ms）：
-Timer → SessionManager::update_all（驱动 KCP）
-      → SessionManager::check_timeout（会话超时淘汰）
-```
-
-### 并发模型
-- 使用 `asio::io_context` 线程池，线程数由配置 `thread_pool_size` 控制。
-- 同一 UDP socket 的发送通过 `asio::strand` 串行化，避免竞态。
-- `Dispatcher::dispatch` 将业务处理投递到 `io_context`，由工作线程执行。
-- `SessionManager` 采用按 conv 分片的哈希表，每片使用 `shared_mutex` 提升并发处理能力。
-
-## 代码阅读顺序
-
-1. 协议定义：[proto/base.proto](file:///d:/user/Deaktop/work/cpp-server/proto/base.proto)（BaseMessage、Ping/Pong）
-2. 会话抽象：[kcp_session.h](file:///d:/user/Deaktop/work/cpp-server/src/kcp_session.h) → [kcp_session.cpp](file:///d:/user/Deaktop/work/cpp-server/src/kcp_session.cpp)
-3. 会话管理：[session_manager.h](file:///d:/user/Deaktop/work/cpp-server/src/session_manager.h) → [session_manager.cpp](file:///d:/user/Deaktop/work/cpp-server/src/session_manager.cpp)
-4. 分发器：[dispatcher.h](file:///d:/user/Deaktop/work/cpp-server/src/dispatcher.h)
-5. UDP 服务器：[udp_server.h](file:///d:/user/Deaktop/work/cpp-server/src/udp_server.h) → [udp_server.cpp](file:///d:/user/Deaktop/work/cpp-server/src/udp_server.cpp)
-6. 程序入口：[main.cpp](file:///d:/user/Deaktop/work/cpp-server/src/main.cpp)
-
-阅读时重点关注：
-- `KcpSession::input / send / try_recv / update / check` 的调用时机
-- `SessionManager::handle_input` 如何在并发下安全地查找/创建会话
-- `UdpServer` 的 `strand` 用法与定时驱动
-- `Dispatcher` 的消息路由与注册接口
-
-## 部署 (Docker)
-
-推荐使用 Docker 进行生产环境部署，以解决依赖和环境一致性问题。
-
-1.  **构建并启动**：
-    ```bash
-    docker-compose up -d --build
-    ```
-    
-2.  **查看日志**：
-    ```bash
-    docker-compose logs -f
-    ```
-
-3.  **停止服务**：
-    ```bash
-    docker-compose down
-    ```
-
-更多部署细节请参考 [Dockerfile](file:///d:/user/desktop/demo/cpp-server/Dockerfile) 和 [docker-compose.yml](file:///d:/user/desktop/demo/cpp-server/docker-compose.yml)。
 
 ## 构建原理与过程详解 (Under the Hood)
 
 当你运行 CMake 构建命令时，后台依次发生了以下过程：
 
 ### 1. 配置阶段 (Configuration)
-CMake 读取根目录的 [CMakeLists.txt](file:///d:/user/Deaktop/work/cpp-server/CMakeLists.txt)，执行以下操作：
+CMake 读取根目录的 [CMakeLists.txt](./CMakeLists.txt)，执行以下操作：
 - **检测环境**：识别编译器 (GCC/MinGW) 和构建工具。
 - **依赖管理 (FetchContent)**：
   - 自动从 GitHub 下载 **KCP**, **ASIO**, **Protobuf**, **Abseil** 的源码压缩包。
@@ -141,7 +154,7 @@ CMake 读取根目录的 [CMakeLists.txt](file:///d:/user/Deaktop/work/cpp-serve
 - **KCP**: 编译 KCP 核心逻辑为静态库 (`libkcp.a`)。
 
 ### 3. 代码生成 (Code Generation)
-构建系统自动调用刚才生成的 `protoc.exe`，根据 [proto/base.proto](file:///d:/user/Deaktop/work/cpp-server/proto/base.proto) 生成 C++ 源文件：
+构建系统自动调用刚才生成的 `protoc.exe`，根据 [proto/base.proto](./proto/base.proto) 生成 C++ 源文件：
 - 生成 `build/base.pb.h` (头文件)
 - 生成 `build/base.pb.cc` (源文件)
 这些文件包含了消息序列化/反序列化的具体实现。
@@ -160,91 +173,3 @@ CMake 读取根目录的 [CMakeLists.txt](file:///d:/user/Deaktop/work/cpp-serve
 - 系统库：`ws2_32` (Windows Socket 库)
 
 最终生成可执行文件 `build/server.exe`。
-
-## 构建步骤
-
-1.  **生成构建文件** (已完成):
-    ```bash
-    # 注意：需要指定 MinGW 生成器和编译器路径 (根据你的环境)
-    cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_PREFIX_PATH=D:/Devtool/protoc-34.0-win64 ...
-    ```
-
-2.  **编译**:
-    在项目根目录运行：
-    ```bash
-    D:\Devtool\cmake\bin\cmake.exe --build build --config Release
-    ```
-    或者进入 `build` 目录运行 `mingw32-make`。
-
-## 运行
-
-构建成功后，可执行文件位于 `build/server.exe` (或 `build/server`)。
-
-```bash
-./build/server.exe
-```
-
-## 配置
-
-- 默认端口: 8888
-- 默认线程数: 4
-- KCP 参数（如 nodelay/interval/sndwnd/rcvwnd/mtu）见 [config.h](file:///d:/user/Deaktop/work/cpp-server/src/config.h)
-- 也可以在项目根放置 `config.yaml`（当前版本采用默认值；如需启用 YAML 解析，可按下文“可选依赖”恢复）
-
-## 扩展：新增业务消息
-
-示例：添加 `Login`（假设分配 `msg_id=1001`）
-1. 在 [proto/base.proto](file:///d:/user/Deaktop/work/cpp-server/proto/base.proto) 添加消息体与 msg_id 约定。
-2. 重新构建（会自动重新生成 `base.pb.*`）：
-   ```bash
-   D:\Devtool\cmake\bin\cmake.exe --build build --config Release -- -j4
-   ```
-3. 在合适位置实现处理函数（例如 `src/main.cpp` 外部或新文件）：
-   ```cpp
-   void on_login(KcpSession::Ptr s, const kcp_server::BaseMessage& base) {
-       kcp_server::Login req; 
-       if (!req.ParseFromString(base.payload())) return;
-       // 处理并回包...
-   }
-   ```
-4. 在程序启动时注册：
-   ```cpp
-   Dispatcher::instance().register_handler(1001, on_login);
-   ```
-
-## 可选依赖（按需开启）
-- 日志：在 CMake 中恢复 `spdlog` 相关段，并把代码中的 `std::cout/cerr` 改回 `spdlog` 接口。
-- 配置：在 CMake 中恢复 `yaml-cpp`，并在 [config.h](file:///d:/user/Deaktop/work/cpp-server/src/config.h) 的 `load` 中解析 `config.yaml`。
-
-## 常见问题排查
-
-- 首次编译时间很长  
-  Protobuf 从源码构建，属于正常现象。可加 `-j4` 加速。
-
-- MinGW GCC 8 与 `std::filesystem`  
-  该版本对 `std::filesystem` 支持不完整，当前已移除依赖。如需使用，请升级 GCC（≥9）或在链接阶段加入 `-lstdc++fs`（不保证完全可用）。
-
-- ZLIB 未找到  
-  Protobuf 会提示 ZLIB 缺失，但当前未使用相关特性，可忽略；若需要请安装并在 CMake 中提供 `ZLIB_LIBRARY`/`ZLIB_INCLUDE_DIR`。
-
-- 端口被占用/权限  
-  启动时报地址绑定失败，请检查 8888 端口占用，或更换端口。
-
-## 项目结构（摘录）
-
-- CMake 与依赖：
-  - [CMakeLists.txt](file:///d:/user/Deaktop/work/cpp-server/CMakeLists.txt)
-  - `build/_deps/` 下为自动拉取与构建的第三方
-- 源码：
-  - [src/main.cpp](file:///d:/user/Deaktop/work/cpp-server/src/main.cpp)
-  - [src/udp_server.h](file:///d:/user/Deaktop/work/cpp-server/src/udp_server.h) / [src/udp_server.cpp](file:///d:/user/Deaktop/work/cpp-server/src/udp_server.cpp)
-  - [src/kcp_session.h](file:///d:/user/Deaktop/work/cpp-server/src/kcp_session.h) / [src/kcp_session.cpp](file:///d:/user/Deaktop/work/cpp-server/src/kcp_session.cpp)
-  - [src/session_manager.h](file:///d:/user/Deaktop/work/cpp-server/src/session_manager.h) / [src/session_manager.cpp](file:///d:/user/Deaktop/work/cpp-server/src/session_manager.cpp)
-  - [src/dispatcher.h](file:///d:/user/Deaktop/work/cpp-server/src/dispatcher.h)
-  - [src/config.h](file:///d:/user/Deaktop/work/cpp-server/src/config.h), [src/utils.h](file:///d:/user/Deaktop/work/cpp-server/src/utils.h)
-- 协议：
-  - [proto/base.proto](file:///d:/user/Deaktop/work/cpp-server/proto/base.proto)
-
----
-
-需要我把 `yaml-cpp` 与 `spdlog` 完整接回并提供一份生产推荐配置吗？我可以直接实现并更新文档。 

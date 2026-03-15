@@ -1,6 +1,7 @@
 #include "core/win_socket_init.h"
 #include "network/udp_server.h"
 #include "network/dispatcher.h"
+#include "engine/snapshot_broadcaster.h"
 #include "core/utils.h"
 #include <iostream>
 #include <stdexcept>
@@ -95,6 +96,11 @@ void UdpServer::start_update_loop() {
                 uint32_t now = current_ms();
                 session_mgr_->update_all(now);
                 session_mgr_->check_timeout(now, 30000);
+                // WorldSnapshot 30Hz
+                if (now - last_snapshot_ms_ >= 33) {
+                    last_snapshot_ms_ = now;
+                    engine::broadcast_world_snapshot(*session_mgr_, now, ++snapshot_seq_);
+                }
             });
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }

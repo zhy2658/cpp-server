@@ -1,4 +1,5 @@
 #include "handlers/ping_handler.h"
+#include "core/msg_ids.h"
 #include "core/utils.h"
 
 namespace handlers {
@@ -15,7 +16,7 @@ void on_ping(KcpSession::Ptr session, const kcp_server::BaseMessage& base) {
     pong.set_server_send(now);
 
     kcp_server::BaseMessage resp;
-    resp.set_msg_id(2);  // Pong
+    resp.set_msg_id(msg_id::Pong);
     resp.set_payload(pong.SerializeAsString());
     resp.set_seq(base.seq());
 

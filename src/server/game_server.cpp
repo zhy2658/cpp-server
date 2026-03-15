@@ -1,6 +1,7 @@
 #include "server/game_server.h"
 #include "handlers/ping_handler.h"
 #include "network/dispatcher.h"
+#include "core/msg_ids.h"
 #include <thread>
 
 GameServer::GameServer(const std::string& config_path) {
@@ -15,7 +16,7 @@ void GameServer::load_config(const std::string& path) {
 }
 
 void GameServer::register_handlers() {
-    Dispatcher::instance().register_handler(1, handlers::on_ping);
+    Dispatcher::instance().register_handler(msg_id::Ping, handlers::on_ping);
 }
 
 void GameServer::start_udp_server() {

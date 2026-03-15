@@ -25,6 +25,8 @@ private:
     void start_update_loop();
 
     asio::io_context& ioc_;
+    uint32_t snapshot_seq_{0};
+    uint32_t last_snapshot_ms_{0};
     std::unique_ptr<asio::ip::udp::socket> socket_;
     // asio::strand<asio::io_context::executor_type> socket_strand_;
     

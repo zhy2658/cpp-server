@@ -7,7 +7,7 @@
 
 namespace handlers {
 
-// MsgID 1: Ping, MsgID 2: Pong (System 0-99)
+// System 0-99: Ping / Pong
 void on_ping(KcpSession::Ptr session, const kcp_server::BaseMessage& base);
 
 }  // namespace handlers

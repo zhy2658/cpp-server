@@ -74,6 +74,15 @@ void SessionManager::update_all(uint32_t current_ms) {
     }
 }
 
+void SessionManager::broadcast(const char* data, size_t len) {
+    for (auto& shard_ptr : shards_) {
+        std::lock_guard<std::mutex> lock(shard_ptr->mutex);
+        for (auto& pair : shard_ptr->sessions) {
+            pair.second->send(data, len);
+        }
+    }
+}
+
 void SessionManager::check_timeout(uint32_t current_ms, uint32_t timeout_ms) {
     for (auto& shard_ptr : shards_) {
         std::unique_lock<std::mutex> lock(shard_ptr->mutex);

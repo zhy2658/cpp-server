@@ -17,6 +17,19 @@ public:
     void update_all(uint32_t current_ms);
     void check_timeout(uint32_t current_ms, uint32_t timeout_ms);
 
+    /// 向所有会话广播数据 (Layer 2)
+    void broadcast(const char* data, size_t len);
+    /// 遍历所有会话 (用于快照生成等)
+    template<typename F>
+    void for_each_session(F&& f) {
+        for (auto& shard_ptr : shards_) {
+            std::lock_guard<std::mutex> lock(shard_ptr->mutex);
+            for (auto& pair : shard_ptr->sessions) {
+                f(pair.second);
+            }
+        }
+    }
+
 private:
     uint32_t get_conv(const char* data);
     

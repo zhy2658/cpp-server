@@ -34,6 +34,7 @@ struct ServerConfig {
                 if (server["ip"]) config.ip = server["ip"].as<std::string>();
                 if (server["port"]) config.port = server["port"].as<uint16_t>();
                 if (server["thread_pool_size"]) config.thread_pool_size = server["thread_pool_size"].as<int>();
+                else if (server["threads"]) config.thread_pool_size = server["threads"].as<int>();
             }
 
             if (root["kcp"]) {

@@ -33,7 +33,7 @@
 | **100 - 999** | **Lobby** | 登录, 匹配, 房间列表, 聊天 |
 | **1000 - 1999** | **Room** | 进出房间, 加载地图, 准备就绪 |
 | **2000 - 2999** | **Battle (Sync)** | 移动同步, 动作状态, 武器切换 |
-| **3000 - 3999** | **Battle (Event)** | 射击, 命中, 死亡, 复活, 掉落拾取 |
+| **3000 - 3999** | **Battle (Event)** | 射击, 近战攻击, 命中, 死亡, 复活, 掉落拾取 |
 | **4000 - 4999** | **Debug** | GM 指令, 调试信息 |
 
 ## 3. 核心交互流程 (Interaction Flow)
@@ -47,9 +47,36 @@
 ### 3.2 战斗循环 (Battle Loop)
 *   **Input**: 客户端以 60Hz/128Hz 采样输入，发送 `PlayerInput { move_dir, view_angle, buttons, sub_tick_time }`。
 *   **Snapshot**: 服务器以 20Hz/30Hz 广播 `WorldSnapshot { entities: [ {id, pos, vel, anim_state} ] }`。
-*   **Event**: 关键事件（开火、击杀）实时可靠发送。
+*   **Event**: 关键事件（开火、近战攻击、击杀）实时可靠发送。
 
-### 3.3 Protobuf 消息定义
+### 3.3 Battle Event 消息与 MsgID
+
+| MsgID | 消息 | 方向 | 说明 |
+| :--- | :--- | :--- | :--- |
+| **3001** | FireEvent | C→S | 远程武器开火，采用 Raycast 判定 |
+| **3002** | MeleeAttackEvent | C→S | 近战攻击，采用 Sphere/Box Overlap 判定 |
+| **3010** | HitEvent | S→C | 命中广播（远程/近战统一） |
+
+**FireEvent** 字段说明：
+
+| 字段 | 类型 | 说明 |
+| :--- | :--- | :--- |
+| shooter_id | uint32 | 开火者实体 ID |
+| origin | Vector3 | 射线起点（枪口位置） |
+| direction | Vector3 | 射线方向（单位向量） |
+| weapon_id | uint32 | 武器配置 ID |
+| weapon_type | uint32 | 0=Ranged, 1=Melee（兼容复用） |
+
+**MeleeAttackEvent** 字段说明：
+
+| 字段 | 类型 | 说明 |
+| :--- | :--- | :--- |
+| attacker_id | uint32 | 攻击者实体 ID |
+| direction | Vector3 | 攻击方向（单位向量） |
+| weapon_id | uint32 | 武器配置 ID |
+| timestamp | uint32 | 客户端时间戳 (ms)，用于延迟补偿 |
+
+### 3.4 Protobuf 消息定义
 
 最新的消息结构定义请直接参考项目源码：
 *   **[proto/base.proto](../../proto/base.proto)**

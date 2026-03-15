@@ -1,20 +1,24 @@
+#include "core/win_socket_init.h"
 #include "network/udp_server.h"
-#include <iostream>
 #include "network/dispatcher.h"
 #include "core/utils.h"
+#include <iostream>
+#include <stdexcept>
 
 UdpServer::UdpServer(asio::io_context& ioc, const ServerConfig& config)
-    : ioc_(ioc), 
-      config_(config)
+    : ioc_(ioc), config_(config)
 {
     std::cout << "UdpServer ctor: initializing socket..." << std::endl;
-    try {
-        socket_ = std::make_unique<asio::ip::udp::socket>(ioc, asio::ip::udp::endpoint(asio::ip::make_address(config.ip), config.port));
-        std::cout << "UdpServer ctor: socket created" << std::endl;
-    } catch (const std::exception& e) {
-        std::cerr << "Socket init failed: " << e.what() << std::endl;
-        throw;
+    asio::ip::address addr;
+    if (config.ip == "0.0.0.0" || config.ip.empty()) {
+        addr = asio::ip::address_v4::any();
+    } else {
+        std::error_code ec;
+        addr = asio::ip::make_address(config.ip, ec);
+        if (ec) throw std::runtime_error("invalid address: " + ec.message());
     }
+    socket_ = std::make_unique<asio::ip::udp::socket>(ioc, asio::ip::udp::endpoint(addr, config.port));
+    std::cout << "UdpServer ctor: socket created" << std::endl;
 
     session_mgr_ = std::make_unique<SessionManager>(ioc, config.kcp, 
         [this](const char* data, size_t len, const asio::ip::udp::endpoint& ep) {

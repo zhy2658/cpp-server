@@ -1,4 +1,7 @@
 #pragma once
+#ifdef _WIN32
+#include "core/win_socket_init.h"
+#endif
 #include <asio.hpp>
 #include <memory>
 #include <array>

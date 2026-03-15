@@ -21,35 +21,66 @@ FinalDamage = (BaseDamage * DistanceFactor * BodyPartFactor) - ArmorReduction
 *   **ArmorReduction**: 护甲减免 (如 `ArmorValue * 0.5`)。
 
 ### 1.2 ECS 与 Jolt 集成
-伤害判定系统 (`CombatSystem`) 依赖 Jolt Physics 进行精确检测。
+伤害判定系统 (`CombatSystem`) 依赖 Jolt Physics 进行精确检测，支持**远程武器 (射线)** 与 **近战武器 (球体/盒体 Overlap)**。
+
+#### 1.2.1 远程武器 (Ranged) — Raycast
 
 ```cpp
-// 伪代码：CombatSystem 处理开火请求
+// 伪代码：CombatSystem 处理远程开火请求
 void CombatSystem::handle_fire(entt::registry& registry, FireRequest& req) {
-    // 1. 获取开火者位置和朝向
     auto& transform = registry.get<Transform>(req.shooter_id);
-    
-    // 2. 延迟补偿回溯 (Rollback)
+    auto& weapon = registry.get<Weapon>(req.shooter_id);
+    if (weapon.weapon_type != WEAPON_RANGED) return;
+
     lag_compensation_sys.rollback_world(req.timestamp);
-    
-    // 3. Jolt 射线检测
-    JPH::RayCast ray(transform.pos, req.direction * weapon.range);
+
+    JPH::RayCast ray(transform.pos, req.direction * weapon.attack_range);
     JPH::RayCastResult hit;
     if (physics_system.CastRay(ray, hit)) {
-        // 4. 获取命中实体
         entt::entity target = physics_system.GetEntity(hit.BodyID);
-        
-        // 5. 判定命中部位 (通过 SubShapeID 映射骨骼)
         float part_factor = get_body_part_factor(hit.SubShapeID);
-        
-        // 6. 扣血
         apply_damage(target, weapon.damage * part_factor);
     }
-    
-    // 7. 恢复现场 (Restore)
+
     lag_compensation_sys.restore_world();
 }
 ```
+
+#### 1.2.2 近战武器 (Melee) — Sphere/Box Overlap
+
+```cpp
+// 伪代码：CombatSystem 处理近战攻击请求
+void CombatSystem::handle_melee(entt::registry& registry, MeleeAttackRequest& req) {
+    auto& transform = registry.get<Transform>(req.attacker_id);
+    auto& weapon = registry.get<Weapon>(req.attacker_id);
+    if (weapon.weapon_type != WEAPON_MELEE) return;
+
+    lag_compensation_sys.rollback_world(req.timestamp);
+
+    // 球体检测：从攻击者位置沿攻击方向延伸 attack_range，半径 hit_radius
+    glm::vec3 tip = transform.pos + req.direction * weapon.attack_range;
+    JPH::SphereCast sphere(transform.pos, tip - transform.pos, weapon.hit_radius);
+    std::vector<JPH::BodyID> hit_list;
+    physics_system.CastSphere(sphere, hit_list);
+
+    for (auto& body_id : hit_list) {
+        entt::entity target = physics_system.GetEntity(body_id);
+        if (target != req.attacker_id) {
+            float part_factor = get_body_part_factor_for_melee(target);  // 近战通常统一 1.0 或按碰撞点
+            apply_damage(target, weapon.damage * part_factor);
+        }
+    }
+
+    lag_compensation_sys.restore_world();
+}
+```
+
+**判定方式总结**：
+
+| 武器类型 | Jolt 检测 | 用途 |
+| :--- | :--- | :--- |
+| **Ranged** | `CastRay` | 狙击、步枪等远程武器 |
+| **Melee** | `CastSphere` / `OverlapBox` | 近战挥砍、拳击、刀剑 |
 
 ## 2. 延迟补偿 (Lag Compensation) 流程
 

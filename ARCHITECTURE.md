@@ -19,6 +19,8 @@
     *   解析 CS2 同款 Sub-tick 架构原理、历史快照回滚机制及射线/碰撞检测的权威判定流程。
 *   **[协议与消息定义规范 (Protocol Design)](docs/protocol_design.md)**
     *   定义 Protobuf 结构、MsgID 严格分段、客户端登录握手交互流程及系统错误码标准。
+*   **[ECS 组件定义规范 (ECS Components)](docs/ecs_components.md)**
+    *   定义 Transform、Health、Weapon 等 EnTT 组件及远程/近战武器支持。
 
 ## 3. 安全与数据 (Security & Data)
 
@@ -26,6 +28,10 @@
     *   阐述“永不信任客户端”的四层防作弊体系，包括移动速度校验、视线遮挡检测、逻辑混淆与签名机制。
 *   **[数据存储与持久化设计 (Storage Design)](docs/storage_design.md)**
     *   定义内存热数据、Redis 温数据与 MySQL 冷数据的分层处理，以及战斗结算的数据库落地策略。
+*   **[C++ 与 Golang RPC 接口规范 (RPC API)](docs/rpc_api.md)**
+    *   定义 CreateRoom、JoinRoom、ReportBattleResult 等 gRPC 接口及调用职责。
+*   **[匹配与房间创建流程 (Matchmaking & Room Flow)](docs/matchmaking_flow.md)**
+    *   从匹配成功到进入战斗房间的端到端时序与异常处理。
 
 ## 4. 工程化与接入 (Engineering & Integration)
 

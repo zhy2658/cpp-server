@@ -132,13 +132,17 @@ endforeach()
 # ==========================================
 # 3. 收集业务源码
 # ==========================================
-file(GLOB_RECURSE SOURCES "src/*.cpp") # 递归查找 src 下所有 .cpp 文件
+file(GLOB_RECURSE SOURCES "src/*.cpp" "src/*/*.cpp" "src/*/*/*.cpp")
 
 # ==========================================
 # 4. 创建最终的可执行文件目标
 # ==========================================
 # 把我们的源码和 protobuf 生成的源码一起打包成 server.exe
 add_executable(server ${SOURCES} ${PROTO_SRCS} ${PROTO_HDRS})
+# Windows: 强制控制台子系统，避免链接器寻找 WinMain
+if(WIN32)
+  set_target_properties(server PROPERTIES WIN32_EXECUTABLE FALSE)
+endif()
 
 # ==========================================
 # 5. 配置头文件搜索路径 (Include Directories)

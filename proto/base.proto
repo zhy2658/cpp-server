@@ -69,11 +69,21 @@ message EntityState {
 // --------------------------------------------------
 // Battle Event (3000-3999)
 // --------------------------------------------------
+// 远程武器开火 (狙击、步枪等)，采用 Raycast 判定
 message FireEvent {
     uint32 shooter_id = 1;
     Vector3 origin = 2;
     Vector3 direction = 3;
     uint32 weapon_id = 4;
+    uint32 weapon_type = 5;  // 0=Ranged, 1=Melee (兼容复用场景)
+}
+
+// 近战武器攻击 (刀剑、拳击等)，采用 Sphere/Box Overlap 判定
+message MeleeAttackEvent {
+    uint32 attacker_id = 1;
+    Vector3 direction = 2;   // 攻击方向
+    uint32 weapon_id = 3;
+    uint32 timestamp = 4;   // 客户端时间戳 (ms)，用于延迟补偿
 }
 
 message HitEvent {

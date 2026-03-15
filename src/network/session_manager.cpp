@@ -40,7 +40,6 @@ void SessionManager::handle_input(const asio::ip::udp::endpoint& ep, const char*
             session = it->second;
         } else {
             std::cout << "New session conv: " << conv << " from " << ep.address().to_string() << ":" << ep.port() << std::endl;
-            // Create session with current config
             session = std::make_shared<KcpSession>(conv, ioc_, ep, config_, send_cb_);
             shard.sessions[conv] = session;
         }

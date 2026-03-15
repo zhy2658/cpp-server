@@ -29,6 +29,8 @@
 | **ECS** | **EnTT** | 业界性能最强的 C++ ECS 框架，优于 OOP 继承。 |
 | **物理** | **Jolt Physics** | 多线程性能极佳的次世代物理引擎 (Horizon 使用)。 |
 | **并发** | **ASIO + Strand** | 使用 Strand 实现无锁并发，每个房间单线程处理，避免 Mutex 死锁。 |
+| **视野** | **Grid / Quadtree** | 使用高效的 AOI 算法管理大地图视野，拒绝 O(N^2) 全量广播。 |
+| **同步** | **Sub-tick** | 采用 CS2 同款 Sub-tick 架构，支持微秒级输入回溯，实现无限 Tick 射击精度。 |
 
 ### 开发规范 (AI & Human)
 

@@ -128,14 +128,16 @@
 
 ### 8.1. 黄金技术栈选型 (Standard Stack)
 
-| 领域         | 推荐库                    | 理由                          | 替代方案 (不推荐)                         |
-| :--------- | :--------------------- | :-------------------------- | :--------------------------------- |
-| **ECS 框架** | **EnTT**               | 现代 C++ 事实标准，性能极高，API 优雅     | 纯手写 Entity 类, Unity 风格的 GameObject |
-| **物理引擎**   | **Jolt Physics**       | 下一代物理引擎，多线程性能强 (Horizon 使用) | PhysX (太重), Bullet3 (老旧)           |
-| **日志系统**   | **spdlog**             | 极快，异步，零成本抽象                 | std::cout, printf, glog            |
-| **配置读取**   | **yaml-cpp**           | 适合人类阅读的配置文件格式               | XML, INI, 手写解析                     |
-| **数学库**    | **glm**                | 图形学标准，与 GLSL 一致，方便移植 Shader | Eigen (太重), 手写 Vector3             |
-| **依赖管理**   | **CMake FetchContent** | 原生支持，无需安装额外包管理器             | 手动下载 zip, git submodule            |
+| 领域 | 推荐库 | 理由 | 替代方案 (不推荐) |
+| :--- | :--- | :--- | :--- |
+| **ECS 框架** | **EnTT** | 现代 C++ 事实标准，性能极高，API 优雅 | 纯手写 Entity 类, Unity 风格的 GameObject |
+| **物理引擎** | **Jolt Physics** | 下一代物理引擎，多线程性能强 (Horizon 使用) | PhysX (太重), Bullet3 (老旧) |
+| **日志系统** | **spdlog** | 极快，异步，零成本抽象 | std::cout, printf, glog |
+| **配置读取** | **yaml-cpp** | 适合人类阅读的配置文件格式 | XML, INI, 手写解析 |
+| **数学库** | **glm** | 图形学标准，与 GLSL 一致，方便移植 Shader | Eigen (太重), 手写 Vector3 |
+| **依赖管理** | **CMake FetchContent** | 原生支持，无需安装额外包管理器 | 手动下载 zip, git submodule |
+| **AOI 算法** | **Grid / Quadtree** | 大地图视野管理标准解法 | 全广播 (O(N^2) 性能灾难) |
+| **同步架构** | **Sub-tick** | CS2 同款架构，实现无限 Tick 射击精度 | 传统 Tick-based (受限于 64Hz) |
 
 ### 8.2. 架构分层原则 (Layered Architecture)
 
